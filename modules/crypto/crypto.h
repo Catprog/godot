@@ -4,18 +4,20 @@
 
 
 #include "reference.h"
-
+#include "io/sha256.h"
 #include "io/aes256.h"
-#include "openssl/hmac.h"
+#include <openssl/hmac.h>
+
+#include <openssl/conf.h>
+#include <openssl/evp.h>
+#include <openssl/err.h>
+
 
 class Crypto : public Reference {
     OBJ_TYPE(Crypto,Reference);
 
 	private:
-		Vector<uint8_t> keyToUse;
-		
-		Vector<uint8_t> oKey;		
-		Vector<uint8_t> iKey;
+		unsigned char *keyToUse;
 		
 		bool use_hmac ;
 		
@@ -39,7 +41,7 @@ class Crypto : public Reference {
 		String decrypt_string (Vector<uint8_t> encrypted);	
 		Vector<uint8_t> decrypt_raw (Vector<uint8_t> encrypted);
 				
-		Vector<uint8_t>  HMAC(Vector<uint8_t> data);
+		Vector<uint8_t>  create_HMAC(Vector<uint8_t> data);
 };
 
 #endif

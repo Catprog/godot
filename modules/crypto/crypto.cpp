@@ -1,47 +1,33 @@
 #include "crypto.h"
 #include <stdlib.h>
+#include <iostream>
 
 void Crypto::set_HMAC(bool hmac){
 	use_hmac = hmac;
 }
 
-Vector<uint8_t> Crypto::HMAC(Vector<uint8_t> data){
-
-	static unsigned char hash[32];
-	
-	data.resize(data.size()+32);
-	
-	for(size_t i =0; i < data.size()-32; i++){
-		data[i+32] = data[i];
-	}
-	for(size_t i =0; i < 32; i++){
-		data[i] = iKey[i];
-	}
-	
-	
-	sha256_context shaCtx;
-	sha256_init(&shaCtx);
-	sha256_hash(&shaCtx,(unsigned char*)data.ptr(),data.size());
-	sha256_done(&shaCtx, hash);
-	
+Vector<uint8_t> Crypto::create_HMAC(Vector<uint8_t> data){
+			
 	Vector<uint8_t> hashVec;
-	
-	hashVec.resize(64);
-	
-	for(size_t i=0;i<32;i++){
-		hashVec[i] = oKey[i];
-		hashVec[i+32] = hash[i];
-	}
-	
-	sha256_init(&shaCtx);
-	sha256_hash(&shaCtx,(unsigned char*)hashVec.ptr(),hashVec.size());
-	sha256_done(&shaCtx, hash);
-	
+		
 	hashVec.resize(32);
 	
+	
+	//char key[] = "012345678";
+
+    // The data that we're going to hash using HMAC
+    //char hashStr[] = "hello world";
+	
+					
+	unsigned char* result = HMAC(EVP_sha256(), keyToUse, 32 , data.ptr(), data.size(), NULL, NULL);    
+		
+	//unsigned char* result = HMAC(EVP_sha256(), key, strlen(key) , (unsigned char*)hashStr, strlen(hashStr), NULL, NULL);   
+	
+	
 	for(size_t i=0;i<32;i++){
-		hashVec[i] = hash[i];
+		hashVec[i] = result[i];
 	}
+	
 	
 	
 	return hashVec;
@@ -68,7 +54,7 @@ void Crypto::set_password(String password){
 }
 
 void Crypto::set_key(Vector<uint8_t> key){
-	
+		
 	if(key.size() < 32){
 	
 		size_t keySize = key.size();
@@ -96,21 +82,13 @@ void Crypto::set_key(Vector<uint8_t> key){
 		}
 	
 	}
+		
 	
-	keyToUse.resize(32);
-	iKey.resize(32);		
-	oKey.resize(32);
-	
-	
-	for(size_t j=0;j<32;j++){	
-		keyToUse[j] = key[j]; //Key
-		oKey[j] = key[j] ^ 92; //Key
-		iKey[j] = key[j] ^ 54; //Key
-	}
-	
-	
-	
+	keyToUse = new unsigned char[32];
+	memcpy(keyToUse, key.ptr(), 32);
 
+	//keyToUse = "12345678901234567890123456789012";
+	
 }
 
 Vector<uint8_t> Crypto::encrypt_string(String plainText){
@@ -130,11 +108,12 @@ Vector<uint8_t> Crypto::encrypt_string(String plainText){
 }
 
 Vector<uint8_t> Crypto::encrypt_raw(Vector<uint8_t> plainRaw){
+		
 	Vector<uint8_t> data;
 	
 	aes256_context ctx;
 	
-	aes256_init(&ctx,keyToUse.ptr());
+	aes256_init(&ctx,keyToUse);
 	
 	
 	int len = plainRaw.size();
@@ -147,8 +126,7 @@ Vector<uint8_t> Crypto::encrypt_raw(Vector<uint8_t> plainRaw){
 	data.resize(paddedLen+16); //Padding Plus Iv
 		
 	char padding = (char)paddedLen-len; //Which char is the padding chracter
-	
-	
+		
 	for(size_t j=0;j<16;j++){	
 		data[j] = rand()%256; //random byte for the first 16.
 	}
@@ -162,11 +140,12 @@ Vector<uint8_t> Crypto::encrypt_raw(Vector<uint8_t> plainRaw){
 		
 	}
 
+
 	for(size_t j=len;j<paddedLen;j++){	
 		
 		data[j+16] = padding; //padding at the end 
 	}
-			
+				
 	for(size_t i=16;i<data.size();i+=16) {			
 		for(size_t j=0;j<16;j++) {		
 			data[i+j] = data[i+j] ^ data[i+j-16]; //Xor the previous block with the current one
@@ -174,15 +153,15 @@ Vector<uint8_t> Crypto::encrypt_raw(Vector<uint8_t> plainRaw){
 		
 		aes256_encrypt_ecb(&ctx,&data[i]);
 	}
-	
-	
+		
 	Vector<uint8_t> hash;
 	
 	aes256_done(&ctx);	
 	
+	
 	if (use_hmac ){
 	
-		hash = HMAC(data);
+		hash = create_HMAC(data);
 	
 		data.resize(data.size()+32);
 		
@@ -192,6 +171,7 @@ Vector<uint8_t> Crypto::encrypt_raw(Vector<uint8_t> plainRaw){
 		for(size_t i =0; i< 32;i++){
 			data[i] = hash[i]; //Add the hash			
 		}
+	
 	
 	}
 	
@@ -236,7 +216,7 @@ Vector<uint8_t> Crypto::decrypt_raw (Vector<uint8_t> encrypted){
 		
 		encrypted.resize(encrypted.size()-32); //Removing the left over from the back
 		
-		hashCalculated = HMAC(encrypted);
+		hashCalculated = create_HMAC(encrypted);
 			
 		bool correct = true;
 		
@@ -258,7 +238,7 @@ Vector<uint8_t> Crypto::decrypt_raw (Vector<uint8_t> encrypted){
 	data.resize(encrypted.size()-16); //We do not want to return the IV so we need 16 bytes less
 	
 	aes256_context ctx;
-	aes256_init(&ctx,keyToUse.ptr());	
+	aes256_init(&ctx,keyToUse);	
 	
 	for(size_t i=0;i<data.size();i+=16){
 		
@@ -295,7 +275,7 @@ void Crypto::_bind_methods(){
     ObjectTypeDB::bind_method("decrypt_string",&Crypto::decrypt_string);
     ObjectTypeDB::bind_method("decrypt_raw",&Crypto::decrypt_raw);
 	
-    ObjectTypeDB::bind_method("HMAC",&Crypto::HMAC);
+    ObjectTypeDB::bind_method("create_HMAC",&Crypto::create_HMAC);
 	
 }
 
